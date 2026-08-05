@@ -1,6 +1,6 @@
 from typing import Generic, TypeVar
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.base import Base
@@ -20,10 +20,17 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def list(self, *, offset: int = 0, limit: int = 100) -> list[ModelType]:
+    async def list(
+        self, *, offset: int = 0, limit: int = 100
+    ) -> tuple[list[ModelType], int]:
         stmt = select(self.model).offset(offset).limit(limit)
+
+        total_stmt = select(func.count()).select_from(self.model)
+        total_result = await self.db.execute(total_stmt)
+        total = total_result.scalar_one()
+
         result = await self.db.execute(stmt)
-        return list(result.scalars().all())
+        return list(result.scalars().all()), total
 
     async def create(self, obj_in: CreateSchemaType) -> ModelType:
         # pyrefly: ignore [missing-attribute]

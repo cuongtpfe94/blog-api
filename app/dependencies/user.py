@@ -1,6 +1,7 @@
+from collections.abc import AsyncGenerator
+
 from app.dependencies.db import get_db
 from app.services.user_service import UserService
-from typing import AsyncGenerator
 
 
 async def get_user_service() -> AsyncGenerator[UserService, None]:

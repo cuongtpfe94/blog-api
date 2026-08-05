@@ -77,22 +77,24 @@ class UserService:
 
         return user
 
-    async def list_user(self, *, offset: int = 0, limit: int = 100) -> list[User]:
-      """
-      List user by pagination
+    async def list_user(
+        self, *, offset: int = 0, limit: int = 100
+    ) -> tuple[list[User], int]:
+        """
+        List user by pagination
 
-      Args:
-        offset: The offset
-        limit: The limit
+        Args:
+          offset: The offset
+          limit: The limit
 
-      Returns:
-        The user list response schema
+        Returns:
+          The user list response schema
 
-      Raises:
-        HTTPException: If the user does not exist
-      """
-      logger.info("List all users")
+        Raises:
+          HTTPException: If the user does not exist
+        """
+        logger.info("List all users")
 
-      users = await self.user_repository.list(offset=offset, limit=limit)
+        users, total = await self.user_repository.list(offset=offset, limit=limit)
 
-      return users
+        return users, total
