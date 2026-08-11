@@ -1,20 +1,28 @@
-from app.schemas.request.reset_password_request_schema import ResetPasswordRequest
 from typing import Annotated
 
 from app.core.responses import success_response
 from app.dependencies.auth import CurrentUserDep, get_auth_service
+from app.dependencies.registration import get_registration_service
 from app.schemas.request.change_password_request_schema import ChangePasswordRequest
 from app.schemas.request.forgot_password_request_schema import ForgotPasswordRequest
 from app.schemas.request.login_request_schema import LoginRequest
+from app.schemas.request.register_request_schema import RegisterRequest
+from app.schemas.request.reset_password_request_schema import ResetPasswordRequest
+from app.schemas.request.verify_email_request_schema import VerifyEmailRequest
 from app.schemas.response.base import SuccessResponse
 from app.schemas.response.token_out_schema import TokenResponse
 from app.schemas.response.user_out_schema import UserResponse
 from app.services.auth_service import AuthService
+from app.services.registration_service import RegistrationService
 from fastapi import APIRouter, Depends, status
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 AuthServiceDep = Annotated[AuthService, Depends(get_auth_service)]
+RegistrationServiceDep = Annotated[
+    RegistrationService,
+    Depends(get_registration_service),
+]
 
 
 @router.post(
@@ -77,6 +85,7 @@ async def forgot_password(
 
     return success_response(message="Forgot password successfully")
 
+
 @router.post(
     "/reset-password",
     response_model=SuccessResponse[None],
@@ -93,3 +102,35 @@ async def reset_password(
     )
 
     return success_response(message="Password reset successfully")
+
+
+@router.post(
+    "/verify-email",
+    response_model=SuccessResponse[None],
+    status_code=status.HTTP_200_OK,
+    summary="Verify email",
+)
+async def verify_email(
+    payload: VerifyEmailRequest,
+    auth_service: AuthServiceDep,
+) -> SuccessResponse[None]:
+    await auth_service.verify_email(
+        token=payload.token,
+    )
+
+    return success_response(message="Email verified successfully")
+
+
+@router.post(
+    "/register",
+    response_model=SuccessResponse[UserResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Register a new user",
+)
+async def register(
+    payload: RegisterRequest,
+    registration_service: RegistrationServiceDep,
+) -> SuccessResponse[UserResponse]:
+    user = await registration_service.register(payload)
+
+    return success_response(user)

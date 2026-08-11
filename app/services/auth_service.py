@@ -1,13 +1,16 @@
-from app.core.exceptions.auth_exceptions import PasswordResetTokenExpiredError
-from app.core.exceptions.auth_exceptions import PasswordResetTokenUsedError
-from app.core.exceptions.auth_exceptions import PasswordResetTokenInvalidError
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from app.configs.env import get_settings
 from app.core.exceptions.auth_exceptions import (
+    EmailVerificationTokenExpiredError,
+    EmailVerificationTokenInvalidError,
+    EmailVerificationTokenUsedError,
     InvalidCredentialsError,
+    PasswordResetTokenExpiredError,
+    PasswordResetTokenInvalidError,
+    PasswordResetTokenUsedError,
     UserInactiveError,
 )
 from app.repositories.auth_repository import AuthRepository
@@ -183,7 +186,9 @@ class AuthService:
         logger.info("Reset password requested")
 
         token_hash = hash_token(token)
-        reset_token = await self.auth_repository.get_password_reset_token_by_hash(token_hash)
+        reset_token = await self.auth_repository.get_password_reset_token_by_hash(
+            token_hash
+        )
 
         if reset_token is None:
             logger.warning("Invalid password reset token")
@@ -197,7 +202,9 @@ class AuthService:
             logger.warning(f"Password reset token expired: {token}")
             raise PasswordResetTokenExpiredError()
 
-        user = await self.auth_repository.get_user_credentials_by_id(reset_token.user_id)
+        user = await self.auth_repository.get_user_credentials_by_id(
+            reset_token.user_id
+        )
 
         if not user:
             logger.error("Password reset token points to missing user")
@@ -214,3 +221,62 @@ class AuthService:
 
         logger.info(f"Password reset successfully for user with ID: {user.id}")
 
+    async def create_email_verification(self, *, user_id: int, email: str) -> None:
+        logger.info(f"Generating email verification token for email: {email}")
+
+        token = generate_secure_token()
+        token_hash = hash_token(token)
+        expires_at = datetime.now(UTC) + timedelta(hours=24)
+
+        await self.auth_repository.create_email_verification_token(
+            user_id=user_id,
+            token_hash=token_hash,
+            expires_at=expires_at,
+        )
+
+        verification_link = f"{self.settings.frontend_url}/verify-email?token={token}"
+
+        logger.info("Email verification link for %s: %s", email, verification_link)
+
+    async def verify_email(self, *, token: str) -> None:
+        """
+        Verify user email by email verification token
+        """
+
+        logger.info("Email verification requested")
+
+        token_hash = hash_token(token)
+        email_verification_token = (
+            await self.auth_repository.get_email_verification_token_by_hash(token_hash)
+        )
+
+        if email_verification_token is None:
+            logger.warning("Invalid email verification token")
+            raise EmailVerificationTokenInvalidError()
+
+        if email_verification_token.is_used:
+            logger.warning(f"Email verification token already used: {token}")
+            raise EmailVerificationTokenUsedError()
+
+        if email_verification_token.expires_at <= datetime.now(UTC):
+            logger.warning(f"Email verification token expired: {token}")
+            raise EmailVerificationTokenExpiredError()
+
+        user = await self.auth_repository.get_user_credentials_by_id(
+            email_verification_token.user_id
+        )
+
+        if not user:
+            logger.error("Email verification token points to missing user")
+            raise EmailVerificationTokenInvalidError()
+
+        if not user.is_active:
+            logger.error("Email verification token points to inactive user")
+            raise UserInactiveError(reason="user_inactive")
+
+        await self.auth_repository.mark_email_verification_token_used(
+            email_verification_token
+        )
+        await self.auth_repository.update_user_verified_status(user_id=user.id)
+
+        logger.info(f"Email verification successfully for user with ID: {user.id}")

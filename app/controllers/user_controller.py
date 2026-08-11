@@ -24,7 +24,9 @@ UserServiceDep = Annotated[UserService, Depends(get_user_service)]
     summary="Create user",
 )
 async def create_user(
-    payload: UserCreateRequest, user_service: UserServiceDep
+    current_admin: CurrentAdminDep,
+    payload: UserCreateRequest,
+    user_service: UserServiceDep,
 ) -> SuccessResponse[UserResponse]:
     user = await user_service.create_user(payload)
 

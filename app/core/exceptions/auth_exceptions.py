@@ -99,14 +99,16 @@ class PermissionDeniedError(BaseAPIError):
             extra=extra,
         )
 
+
 class PasswordResetTokenInvalidError(BaseAPIError):
     def __init__(self) -> None:
         super().__init__(
             message="Invalid password reset token",
             error_code=_error_code("PASSWORD_RESET_TOKEN_INVALID"),
             status_code=HTTPStatus.BAD_REQUEST,
-            extra={}
+            extra={},
         )
+
 
 class PasswordResetTokenExpiredError(BaseAPIError):
     def __init__(self) -> None:
@@ -114,8 +116,9 @@ class PasswordResetTokenExpiredError(BaseAPIError):
             message="Password reset token has expired",
             error_code=_error_code("PASSWORD_RESET_TOKEN_EXPIRED"),
             status_code=HTTPStatus.BAD_REQUEST,
-            extra={}
+            extra={},
         )
+
 
 class PasswordResetTokenUsedError(BaseAPIError):
     def __init__(self) -> None:
@@ -123,5 +126,45 @@ class PasswordResetTokenUsedError(BaseAPIError):
             message="Password reset token has been used",
             error_code=_error_code("PASSWORD_RESET_TOKEN_USED"),
             status_code=HTTPStatus.BAD_REQUEST,
-            extra={}
+            extra={},
+        )
+
+
+class EmailVerificationTokenInvalidError(BaseAPIError):
+    def __init__(self) -> None:
+        super().__init__(
+            message="Email verification link is invalid",
+            error_code=_error_code("EMAIL_VERIFICATION_TOKEN_INVALID"),
+            status_code=HTTPStatus.BAD_REQUEST,
+            extra={},
+        )
+
+
+class EmailVerificationTokenExpiredError(BaseAPIError):
+    def __init__(self) -> None:
+        super().__init__(
+            message="Email verification link has expired",
+            error_code=_error_code("EMAIL_VERIFICATION_TOKEN_EXPIRED"),
+            status_code=HTTPStatus.BAD_REQUEST,
+            extra={},
+        )
+
+
+class EmailVerificationTokenUsedError(BaseAPIError):
+    def __init__(self) -> None:
+        super().__init__(
+            message="Email verification link has been used",
+            error_code=_error_code("EMAIL_VERIFICATION_TOKEN_USED"),
+            status_code=HTTPStatus.BAD_REQUEST,
+            extra={},
+        )
+
+
+class EmailVerificationAlreadyVerifiedError(BaseAPIError):
+    def __init__(self) -> None:
+        super().__init__(
+            message="Email has already been verified",
+            error_code=_error_code("EMAIL_VERIFICATION_ALREADY_VERIFIED"),
+            status_code=HTTPStatus.BAD_REQUEST,
+            extra={},
         )

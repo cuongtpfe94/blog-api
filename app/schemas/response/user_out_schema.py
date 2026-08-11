@@ -11,5 +11,7 @@ class UserResponse(BaseModel):
     is_superuser: bool
     created_at: datetime
     updated_at: datetime
+    is_verified: bool
+    verified_at: datetime | None
 
     model_config = ConfigDict(from_attributes=True)

@@ -26,6 +26,8 @@ class Settings(BaseSettings):
 
     security: SecuritySettings | None = Field(default=None)
 
+    frontend_url: str = Field(alias="FRONTEND_URL")
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
