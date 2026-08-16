@@ -1,3 +1,6 @@
+from app.schemas.request.resend_verification_email_request_schema import (
+    ResendVerificationEmailRequest,
+)
 from typing import Annotated
 
 from app.core.responses import success_response
@@ -134,3 +137,18 @@ async def register(
     user = await registration_service.register(payload)
 
     return success_response(user)
+
+
+@router.post(
+    "/resend-verification-email",
+    response_model=SuccessResponse[None],
+    status_code=status.HTTP_200_OK,
+    summary="Resend verification email",
+)
+async def resend_verification_email(
+    payload: ResendVerificationEmailRequest,
+    auth_service: AuthServiceDep,
+) -> SuccessResponse[None]:
+    await auth_service.resend_verification_email(email=payload.email)
+
+    return success_response(message="Verification email resent successfully")

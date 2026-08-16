@@ -1,3 +1,4 @@
+from app.services.email_service import EmailService
 import logging
 
 from app.schemas.request.register_request_schema import RegisterRequest
@@ -11,9 +12,9 @@ logger = logging.getLogger(__name__)
 
 
 class RegistrationService:
-    def __init__(self, db: AsyncSession) -> None:
+    def __init__(self, db: AsyncSession, email_service: EmailService) -> None:
         self.user_service = UserService(db)
-        self.auth_service = AuthService(db)
+        self.auth_service = AuthService(db, email_service=email_service)
 
     async def register(self, payload: RegisterRequest) -> UserResponse:
         """

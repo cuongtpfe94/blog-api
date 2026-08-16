@@ -4,6 +4,9 @@ from typing import Any
 from app.configs.settings.security import JwtAlgorithm, JwtSettings, SecuritySettings
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Any, Literal
+
+EmailProvider = Literal["console", "ses"]
 
 
 class Settings(BaseSettings):
@@ -27,6 +30,11 @@ class Settings(BaseSettings):
     security: SecuritySettings | None = Field(default=None)
 
     frontend_url: str = Field(alias="FRONTEND_URL")
+    email_from: str = Field(default="no-reply@example.com", alias="EMAIL_FROM")
+    email_provider: EmailProvider = Field(default="console", alias="EMAIL_PROVIDER")
+    aws_region: str = Field(..., alias="AWS_REGION")
+    aws_access_key_id: str = Field(..., alias="AWS_ACCESS_KEY_ID")
+    aws_secret_access_key: str = Field(..., alias="AWS_SECRET_ACCESS_KEY")
 
     model_config = SettingsConfigDict(
         env_file=".env",

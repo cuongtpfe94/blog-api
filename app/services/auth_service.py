@@ -1,3 +1,5 @@
+from app.services.email_service import EmailService
+from app.core.exceptions.auth_exceptions import EmailNotVerifiedError
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -42,10 +44,11 @@ class AuthService:
     - logout
     """
 
-    def __init__(self, db: AsyncSession) -> None:
+    def __init__(self, db: AsyncSession, email_service: EmailService) -> None:
         self.db = db
         self.auth_repository = AuthRepository(db)
         self.jwt_service = get_jwt_service()
+        self.email_service = email_service or EmailService()
         self.settings = get_settings()
 
         security_settings = self.settings.security
@@ -77,6 +80,10 @@ class AuthService:
         if not user_res.is_active:
             logger.error(f"User is not active for email: {email}")
             raise UserInactiveError(reason="user_inactive")
+
+        if not user_res.is_verified:
+            logger.warning("Login block because email is not verified")
+            raise EmailNotVerifiedError()
 
         access_token = self.jwt_service.create_access_token(
             subject=str(user_res.id),
@@ -165,9 +172,11 @@ class AuthService:
             expires_at=expires_at,
         )
 
-        reset_link = f"http://localhost:3000/reset-password?token={token}"
+        reset_link = f"{self.settings.frontend_url}/reset-password?token={token}"
 
-        logger.info("Password reset link for %s: %s", email, reset_link)
+        await self.email_service.send_password_reset_email(
+            to_email=email, reset_link=reset_link
+        )
 
     async def reset_password(self, *, token: str, new_password: str) -> None:
         """
@@ -236,7 +245,10 @@ class AuthService:
 
         verification_link = f"{self.settings.frontend_url}/verify-email?token={token}"
 
-        logger.info("Email verification link for %s: %s", email, verification_link)
+        await self.email_service.send_email_verification_email(
+            to_email=email,
+            verification_link=verification_link,
+        )
 
     async def verify_email(self, *, token: str) -> None:
         """
@@ -280,3 +292,29 @@ class AuthService:
         await self.auth_repository.update_user_verified_status(user_id=user.id)
 
         logger.info(f"Email verification successfully for user with ID: {user.id}")
+
+    async def resend_verification_email(self, *, email: str) -> None:
+        """
+        Generate a new email verification token and send it to the user.
+
+        Always returns None to avoid leaking whether the email exists.
+        """
+        logger.info("Resend verification email request for email: %s", email)
+
+        user = await self.auth_repository.get_user_credentials_by_email(email)
+
+        if user is None:
+            logger.warning(
+                "Resend verification email for non-existent user with email: %s", email
+            )
+            return
+
+        if not user.is_active:
+            logger.warning("Resend verification email for inactive user")
+            return
+
+        if user.is_verified:
+            logger.warning("Resend verification email for verified user")
+            return
+
+        await self.create_email_verification(user_id=user.id, email=email)

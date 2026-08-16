@@ -168,3 +168,13 @@ class EmailVerificationAlreadyVerifiedError(BaseAPIError):
             status_code=HTTPStatus.BAD_REQUEST,
             extra={},
         )
+
+
+class EmailNotVerifiedError(BaseAPIError):
+    def __init__(self) -> None:
+        super().__init__(
+            message="Email is not verified",
+            error_code=_error_code("EMAIL_NOT_VERIFIED"),
+            status_code=HTTPStatus.BAD_REQUEST,
+            extra={},
+        )

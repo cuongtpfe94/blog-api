@@ -1,3 +1,4 @@
+from app.dependencies.email import get_email_service
 from collections.abc import AsyncGenerator
 from typing import Annotated
 
@@ -22,8 +23,10 @@ async def get_auth_service() -> AsyncGenerator[AuthService, None]:
     """
     Dependency to get the auth service
     """
+    email_service = get_email_service()
+
     async for db in get_db():
-        yield AuthService(db)
+        yield AuthService(db, email_service=email_service)
 
 
 async def get_current_user(
