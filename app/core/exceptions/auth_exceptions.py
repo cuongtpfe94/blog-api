@@ -178,3 +178,23 @@ class EmailNotVerifiedError(BaseAPIError):
             status_code=HTTPStatus.BAD_REQUEST,
             extra={},
         )
+
+
+class TooManyEmailRequestsError(BaseAPIError):
+    def __init__(self, *, retry_after_seconds: int) -> None:
+        super().__init__(
+            message="Too many email action requests. Please try again later.",
+            error_code=_error_code("TOO_MANY_EMAIL_ACTION_REQUESTS"),
+            status_code=HTTPStatus.TOO_MANY_REQUESTS,
+            extra={"retry_after_seconds": str(retry_after_seconds)},
+        )
+
+
+class TooManyLoginAttemptsError(BaseAPIError):
+    def __init__(self, *, retry_after_seconds: int) -> None:
+        super().__init__(
+            message="Too many login attempts. Please try again later.",
+            error_code=_error_code("TOO_MANY_LOGIN_ATTEMPTS"),
+            status_code=HTTPStatus.TOO_MANY_REQUESTS,
+            extra={"retry_after_seconds": str(retry_after_seconds)},
+        )

@@ -1,3 +1,7 @@
+from app.dependencies import redis
+from app.dependencies.redis import get_redis_service
+from app.services.redis_service import RedisService
+from app.schemas.response.redis_health_out_schema import RedisHealthResponse
 from app.configs.env import get_settings
 from app.dependencies.db import get_db
 from app.schemas.response.database_health_out_schema import DatabaseHealthResponse
@@ -41,4 +45,21 @@ async def database_health_check(
     return DatabaseHealthResponse(
         status="ok" if is_connected else "error",
         database="connected" if is_connected else "disconnected",
+    )
+
+
+@router.get(
+    "/redis",
+    response_model=RedisHealthResponse,
+    status_code=status.HTTP_200_OK,
+    summary="redis health check",
+)
+async def redis_health_check(
+    redis_service: RedisService = Depends(get_redis_service),
+) -> RedisHealthResponse:
+    is_connected = await redis_service.ping()
+
+    return RedisHealthResponse(
+        status="ok" if is_connected else "error",
+        redis="connected" if is_connected else "disconnected",
     )

@@ -1,3 +1,4 @@
+from app.services.redis_service import RedisService
 from app.services.email_service import EmailService
 import logging
 
@@ -12,9 +13,9 @@ logger = logging.getLogger(__name__)
 
 
 class RegistrationService:
-    def __init__(self, db: AsyncSession, email_service: EmailService) -> None:
+    def __init__(self, db: AsyncSession, email_service: EmailService, redis_service: RedisService) -> None:
         self.user_service = UserService(db)
-        self.auth_service = AuthService(db, email_service=email_service)
+        self.auth_service = AuthService(db, email_service=email_service, redis_service=redis_service)
 
     async def register(self, payload: RegisterRequest) -> UserResponse:
         """

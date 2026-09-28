@@ -30,8 +30,12 @@ class AuthRepository:
         stmt = (
             update(User)
             .where(User.id == user_id)
-            .values(hashed_password=hashed_password)
+            .values(
+                hashed_password=hashed_password,
+                token_version=User.token_version + 1,
+            )
         )
+
         await self.db.execute(stmt)
         await self.db.commit()
 
@@ -127,3 +131,18 @@ class AuthRepository:
         )
         await self.db.execute(stmt)
         await self.db.commit()
+
+    async def increment_user_token_version(self, user_id: int) -> int | None:
+        stmt = (
+            update(User)
+            .where(User.id == user_id)
+            .values(token_version=User.token_version + 1)
+            .returning(User.token_version)
+        )
+
+        result = await self.db.execute(stmt)
+        token_version = result.scalar_one_or_none()
+
+        await self.db.commit()
+
+        return token_version

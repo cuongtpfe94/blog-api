@@ -1,3 +1,5 @@
+from app.core.exceptions.auth_exceptions import TokenMissingError
+from fastapi import APIRouter, Cookie, Depends, Request, Response, status
 from app.schemas.request.resend_verification_email_request_schema import (
     ResendVerificationEmailRequest,
 )
@@ -17,7 +19,6 @@ from app.schemas.response.token_out_schema import TokenResponse
 from app.schemas.response.user_out_schema import UserResponse
 from app.services.auth_service import AuthService
 from app.services.registration_service import RegistrationService
-from fastapi import APIRouter, Depends, status
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -27,6 +28,19 @@ RegistrationServiceDep = Annotated[
     Depends(get_registration_service),
 ]
 
+RefreshTokenCookie = Annotated[str | None, Cookie(alias="refresh_token")]
+
+def set_refresh_token_cookie(response: Response, refresh_token: str) -> None:
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=30 * 24 * 60 * 60,
+        path="/auth",
+    )
+
 
 @router.post(
     "/login",
@@ -34,11 +48,19 @@ RegistrationServiceDep = Annotated[
     status_code=status.HTTP_200_OK,
 )
 async def login(
-    payload: LoginRequest, auth_service: AuthServiceDep
+    request: Request,
+    response: Response,
+    payload: LoginRequest,
+    auth_service: AuthServiceDep
 ) -> SuccessResponse[TokenResponse]:
+    client_ip = request.client.host if request.client else "unknown_ip"
+
     auth_service_res = await auth_service.login(
-        email=payload.email, password=payload.password
+        email=payload.email, password=payload.password, client_ip=client_ip
     )
+
+    if auth_service_res:
+        set_refresh_token_cookie(response, auth_service_res.refresh_token)
 
     return success_response(
         TokenResponse.model_validate(auth_service_res, from_attributes=True)
@@ -57,10 +79,12 @@ async def get_me(current_user: CurrentUserDep) -> SuccessResponse[UserResponse]:
 
 @router.patch(
     "/change-password",
+    response_model=SuccessResponse[None],
     status_code=status.HTTP_200_OK,
     summary="Change user password",
 )
 async def change_password(
+    response: Response,
     payload: ChangePasswordRequest,
     current_user: CurrentUserDep,
     auth_service: AuthServiceDep,
@@ -69,6 +93,11 @@ async def change_password(
         email=current_user.email,
         current_password=payload.current_password,
         new_password=payload.new_password,
+    )
+
+    response.delete_cookie(
+        key="refresh_token",
+        path="/auth",
     )
 
     return success_response(message="Password changed successfully")
@@ -81,10 +110,13 @@ async def change_password(
     summary="Forgot password",
 )
 async def forgot_password(
+    request: Request,
     payload: ForgotPasswordRequest,
     auth_service: AuthServiceDep,
 ) -> SuccessResponse[None]:
-    await auth_service.forgot_password(email=payload.email)
+    client_ip = request.client.host if request.client else "unknown_ip"
+
+    await auth_service.forgot_password(email=payload.email, client_ip=client_ip)
 
     return success_response(message="Forgot password successfully")
 
@@ -96,12 +128,18 @@ async def forgot_password(
     summary="Reset password",
 )
 async def reset_password(
+    response: Response,
     payload: ResetPasswordRequest,
     auth_service: AuthServiceDep,
 ) -> SuccessResponse[None]:
     await auth_service.reset_password(
         token=payload.token,
         new_password=payload.new_password,
+    )
+
+    response.delete_cookie(
+        key="refresh_token",
+        path="/auth",
     )
 
     return success_response(message="Password reset successfully")
@@ -146,9 +184,80 @@ async def register(
     summary="Resend verification email",
 )
 async def resend_verification_email(
+    request: Request,
     payload: ResendVerificationEmailRequest,
     auth_service: AuthServiceDep,
 ) -> SuccessResponse[None]:
-    await auth_service.resend_verification_email(email=payload.email)
+    client_ip = request.client.host if request.client else "unknown_ip"
+
+    await auth_service.resend_verification_email(
+        email=payload.email, client_ip=client_ip
+    )
 
     return success_response(message="Verification email resent successfully")
+
+
+@router.post(
+    "/refresh",
+    response_model=SuccessResponse[TokenResponse],
+    status_code=status.HTTP_200_OK,
+    summary="Refresh access token",
+)
+async def refresh(
+    refresh_token: RefreshTokenCookie,
+    auth_service: AuthServiceDep,
+) -> SuccessResponse[TokenResponse]:
+    if refresh_token is None:
+        raise TokenMissingError(token_type="refresh")
+
+    auth_service_res = await auth_service.refresh(refresh_token)
+
+    return success_response(
+        TokenResponse.model_validate(auth_service_res, from_attributes=True)
+    )
+
+
+@router.post(
+    "/logout",
+    response_model=SuccessResponse[None],
+    status_code=status.HTTP_200_OK,
+    summary="Logout current device",
+)
+async def logout(
+    response: Response,
+    refresh_token: RefreshTokenCookie,
+    auth_service: AuthServiceDep,
+) -> SuccessResponse[None]:
+    if refresh_token is None:
+        raise TokenMissingError(token_type="refresh")
+
+    await auth_service.logout(refresh_token)
+
+    response.delete_cookie(
+        key="refresh_token",
+        path="/auth",
+    )
+
+    return success_response(message="Logged out successfully")
+
+@router.post(
+    "/logout-all-devices",
+    response_model=SuccessResponse[None],
+    status_code=status.HTTP_200_OK,
+    summary="Logout all devices",
+)
+async def logout_all_devices(
+    response: Response,
+    current_user: CurrentUserDep,
+    auth_service: AuthServiceDep,
+) -> SuccessResponse[None]:
+    await auth_service.logout_all_devices(current_user.id)
+
+    response.delete_cookie(
+        key="refresh_token",
+        path="/auth",
+    )
+
+    return success_response(
+        message="Logged out from all devices successfully"
+    )

@@ -1,3 +1,4 @@
+from app.dependencies.redis import get_redis_service
 from app.dependencies.email import get_email_service
 from collections.abc import AsyncGenerator
 from typing import Annotated
@@ -24,9 +25,10 @@ async def get_auth_service() -> AsyncGenerator[AuthService, None]:
     Dependency to get the auth service
     """
     email_service = get_email_service()
+    redis_service = get_redis_service()
 
     async for db in get_db():
-        yield AuthService(db, email_service=email_service)
+        yield AuthService(db, email_service=email_service, redis_service=redis_service)
 
 
 async def get_current_user(
