@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     refresh_token_cookie_same_site: str = Field(
         default="lax", alias="REFRESH_TOKEN_COOKIE_SAMESITE"
     )
+    two_factor_otp_ttl_seconds: int = Field(default=300, alias="TWO_FACTOR_OTP_TTL_SECONDS")
+    two_factor_otp_pepper: SecretStr = Field(alias="TWO_FACTOR_OTP_PEPPER")
 
     security: SecuritySettings | None = Field(default=None)
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")

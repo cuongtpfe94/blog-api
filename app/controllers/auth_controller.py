@@ -1,3 +1,4 @@
+from app.schemas.response.two_factor_out_schema import TwoFactorChallengeResponse
 from app.core.exceptions.auth_exceptions import TokenMissingError
 from fastapi import APIRouter, Cookie, Depends, Request, Response, status
 from app.schemas.request.resend_verification_email_request_schema import (
@@ -17,7 +18,7 @@ from app.schemas.request.verify_email_request_schema import VerifyEmailRequest
 from app.schemas.response.base import SuccessResponse
 from app.schemas.response.token_out_schema import TokenResponse
 from app.schemas.response.user_out_schema import UserResponse
-from app.services.auth_service import AuthService
+from app.services.auth_service import AuthService, TwoFactorChallengeTokenOut, TokenPairOut
 from app.services.registration_service import RegistrationService
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -44,7 +45,7 @@ def set_refresh_token_cookie(response: Response, refresh_token: str) -> None:
 
 @router.post(
     "/login",
-    response_model=SuccessResponse[TokenResponse],
+    response_model=SuccessResponse[TokenResponse | TwoFactorChallengeResponse],
     status_code=status.HTTP_200_OK,
 )
 async def login(
@@ -52,19 +53,27 @@ async def login(
     response: Response,
     payload: LoginRequest,
     auth_service: AuthServiceDep
-) -> SuccessResponse[TokenResponse]:
+) -> SuccessResponse[TokenResponse | TwoFactorChallengeResponse]:
     client_ip = request.client.host if request.client else "unknown_ip"
 
     auth_service_res = await auth_service.login(
         email=payload.email, password=payload.password, client_ip=client_ip
     )
 
-    if auth_service_res:
+    if isinstance(auth_service_res, TokenPairOut):
         set_refresh_token_cookie(response, auth_service_res.refresh_token)
 
-    return success_response(
-        TokenResponse.model_validate(auth_service_res, from_attributes=True)
-    )
+
+        return success_response(
+            TokenResponse.model_validate(auth_service_res, from_attributes=True)
+        )
+
+    if isinstance(auth_service_res, TwoFactorChallengeTokenOut):
+        return success_response(
+            TwoFactorChallengeResponse.model_validate(auth_service_res, from_attributes=True)
+        )
+
+    raise RuntimeError("Unsupported auth service response type")
 
 
 @router.get(

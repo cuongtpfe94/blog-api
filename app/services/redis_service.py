@@ -12,6 +12,18 @@ class RedisService:
         settings = get_settings()
         self.client = Redis.from_url(settings.redis_url, decode_responses=True)
 
+    async def get(self, key: str) -> str | None:
+        """Get value by key"""
+        try:
+            value = await self.client.get(key)
+            if value is None:
+                return None
+
+            return str(value)
+        except Exception as e:
+            logger.error(f"Failed to get key: {key} - {e}")
+            return None
+
     async def ping(self) -> bool:
         """Test Redis connection"""
         try:

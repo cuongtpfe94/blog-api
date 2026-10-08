@@ -136,3 +136,44 @@ class EmailService:
             to_email,
             response.get("MessageId"),
         )
+
+    async def send_two_factor_otp_email(
+        self,
+        *,
+        to_email: str,
+        otp: str,
+        expires_in_minutes: int,
+    ) -> None:
+        subject = "Your login verification code"
+
+        text_body = (
+            f"Your verification code is: {otp}\n\n"
+            f"This code expires in {expires_in_minutes} minutes.\n"
+            "If you did not attempt to sign in, change your password."
+        )
+
+        html_body = f"""
+        <!doctype html>
+        <html lang="en">
+        <body style="font-family:Arial,sans-serif;color:#202124">
+            <h2>Login verification</h2>
+            <p>Use this verification code to complete your login:</p>
+            <p style="font-size:32px;font-weight:700;letter-spacing:8px">
+            {otp}
+            </p>
+            <p>
+            This code expires in {expires_in_minutes} minutes.
+            </p>
+            <p>
+            If you did not attempt to sign in, change your password.
+            </p>
+        </body>
+        </html>
+        """
+
+        await self._send_email(
+            to_email=to_email,
+            subject=subject,
+            text_body=text_body,
+            html_body=html_body,
+        )

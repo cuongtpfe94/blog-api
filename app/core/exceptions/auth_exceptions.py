@@ -198,3 +198,22 @@ class TooManyLoginAttemptsError(BaseAPIError):
             status_code=HTTPStatus.TOO_MANY_REQUESTS,
             extra={"retry_after_seconds": str(retry_after_seconds)},
         )
+
+class TwoFactorChallengeInvalidError(BaseAPIError):
+    def __init__(self)-> None:
+        super().__init__(
+            message="Two-factor challenge is invalid or has expired.",
+            error_code=_error_code("TWO_FACTOR_CHALLENGE_INVALID"),
+            status_code=HTTPStatus.UNAUTHORIZED,
+            extra={},
+        )
+
+
+class TwoFactorCodeInvalidError(BaseAPIError):
+    def __init__(self) -> None:
+        super().__init__(
+            message="Two-factor verification code is invalid",
+            error_code=_error_code("TWO_FACTOR_CODE_INVALID"),
+            status_code=HTTPStatus.UNAUTHORIZED,
+            extra={},
+        )

@@ -1,12 +1,14 @@
+from app.security.otp import verify_otp
+from app.dependencies import user
 from app.core.exceptions.auth_exceptions import TokenInvalidError
 from app.dependencies import email
 from app.core.exceptions.auth_exceptions import TooManyEmailRequestsError
-from app.core.exceptions import auth_exceptions
 from app.core.exceptions.auth_exceptions import TooManyLoginAttemptsError
 from app.services.redis_service import RedisService
 from app.services.email_service import EmailService
 from app.core.exceptions.auth_exceptions import EmailNotVerifiedError
 import logging
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
@@ -20,10 +22,14 @@ from app.core.exceptions.auth_exceptions import (
     PasswordResetTokenInvalidError,
     PasswordResetTokenUsedError,
     UserInactiveError,
+    TwoFactorChallengeInvalidError,
+    TwoFactorCodeInvalidError,
 )
+from app.models.user_model import User
 from app.repositories.auth_repository import AuthRepository
 from app.security.password import hash_password, verify_password
 from app.security.provider import get_jwt_service
+from app.security.otp import generate_otp, hash_otp
 from app.security.token import generate_secure_token, hash_token
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,6 +48,13 @@ class TokenPairOut:
     expires_in: int
     token_type: str = "Bearer"
 
+@dataclass(frozen=True)
+class TwoFactorChallengeTokenOut:
+    requires_2fa: bool = True
+    challenge_token: str = ''
+    expires_in: int = 0
+
+LoginResult = TokenPairOut | TwoFactorChallengeTokenOut
 
 class AuthService:
     """
@@ -66,10 +79,16 @@ class AuthService:
             raise RuntimeError("Security settings not found")
 
         self._access_ttl_minutes = security_settings.jwt.access_token_expire_minutes
+        self._two_factor_otp_ttl_seconds = (
+            self.settings.two_factor_otp_ttl_seconds
+        )
+        self._two_factor_otp_pepper = (
+            self.settings.two_factor_otp_pepper.get_secret_value()
+        )
 
     async def login(
         self, email: str, password: str, client_ip: str
-    ) -> TokenPairOut | None:
+    ) -> LoginResult:
         """
         Check credentials
         Generate access token
@@ -101,31 +120,20 @@ class AuthService:
             logger.warning("Login block because email is not verified")
             raise EmailNotVerifiedError()
 
-        access_token = self.jwt_service.create_access_token(
-            subject=str(user_res.id),
-            extra_claims={
-                "email": user_res.email,
-                "display_name": user_res.display_name,
-            },
-        )
+        if user_res.is_2fa_enabled:
+            await self._clear_failed_login(
+                email=email,
+                client_ip=client_ip
+            )
 
-        refresh_token = self.jwt_service.create_refresh_token(
-            subject=str(user_res.id),
-            extra_claims={
-                "email": user_res.email,
-                "display_name": user_res.display_name,
-                "token_version": user_res.token_version
-            },
-        )
+            return await self._create_two_factor_challenge(
+                user_id=user_res.id,
+                email=user_res.email
+            )
 
         await self._clear_failed_login(email=email, client_ip=client_ip)
 
-        return TokenPairOut(
-            access_token=access_token,
-            refresh_token=refresh_token,
-            expires_in=self._access_ttl_minutes * 60,
-            token_type="Bearer",
-        )
+        return self._create_token_pair(user_res)
 
     async def refresh(self, refresh_token: str) -> TokenPairOut:
         """
@@ -630,3 +638,143 @@ class AuthService:
 
         if token_version is None:
             raise TokenInvalidError(token_type="access")
+
+    @staticmethod
+    def _two_factor_challenge_key(challenge_token: str) -> str:
+        challenge_hash = hash_token(challenge_token)
+
+        return f"auth:2fa:challenge:{challenge_hash}"
+
+    async def _create_two_factor_challenge(
+        self,
+        *,
+        user_id: int,
+        email: str,
+    ) -> TwoFactorChallengeTokenOut:
+        otp = generate_otp()
+        otp_hash = hash_otp(
+            otp,
+            self._two_factor_otp_pepper,
+        )
+        challenge_token = generate_secure_token()
+
+        challenge_data = {
+            "user_id": user_id,
+            "otp_hash": otp_hash,
+        }
+
+        await self.redis_service.set_with_ttl(
+            key=self._two_factor_challenge_key(challenge_token),
+            value=json.dumps(challenge_data),
+            ttl_seconds=self._two_factor_otp_ttl_seconds,
+        )
+
+        await self.email_service.send_two_factor_otp_email(
+            to_email=email,
+            otp=otp,
+            expires_in_minutes=(
+                self._two_factor_otp_ttl_seconds // 60
+            ),
+        )
+
+        return TwoFactorChallengeTokenOut(
+            challenge_token=challenge_token,
+            expires_in=self._two_factor_otp_ttl_seconds,
+        )
+
+
+    def _create_token_pair(self, user: User) -> TokenPairOut:
+        access_token = self.jwt_service.create_access_token(
+            subject=str(user.id),
+            extra_claims={
+                "email": user.email,
+                "display_name": user.display_name,
+            },
+        )
+
+        refresh_token = self.jwt_service.create_refresh_token(
+            subject=str(user.id),
+            extra_claims={
+                "email": user.email,
+                "display_name": user.display_name,
+                "token_version": user.token_version,
+            },
+        )
+
+        return TokenPairOut(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            expires_in=self._access_ttl_minutes * 60,
+            token_type="Bearer",
+        )
+
+    async def verify_two_factor(
+        self,
+        *,
+        challenge_token: str,
+        otp: str,
+    ) -> TokenPairOut:
+        challenge_key = self._two_factor_challenge_key(
+            challenge_token
+        )
+
+        raw_challenge = await self.redis_service.get(
+            challenge_key
+        )
+
+        if raw_challenge is None:
+            raise TwoFactorChallengeInvalidError()
+
+        try:
+            challenge_data = json.loads(raw_challenge)
+        except (json.JSONDecodeError, TypeError):
+            logger.exception(
+                "Invalid two-factor challenge data in Redis"
+            )
+            await self.redis_service.delete(challenge_key)
+            raise TwoFactorChallengeInvalidError()
+
+        user_id = challenge_data.get("user_id")
+        expected_otp_hash = challenge_data.get("otp_hash")
+
+        if (
+            type(user_id) is not int
+            or not isinstance(expected_otp_hash, str)
+        ):
+            await self.redis_service.delete(challenge_key)
+            raise TwoFactorChallengeInvalidError()
+
+        is_valid_otp = verify_otp(
+            plain_otp=otp,
+            expected_hash=expected_otp_hash,
+            pepper=self._two_factor_otp_pepper,
+        )
+
+        if not is_valid_otp:
+            raise TwoFactorCodeInvalidError()
+
+        user = (
+            await self.auth_repository
+            .get_user_credentials_by_id(user_id)
+        )
+
+        if user is None:
+            await self.redis_service.delete(challenge_key)
+            raise TwoFactorChallengeInvalidError()
+
+        if not user.is_active:
+            await self.redis_service.delete(challenge_key)
+            raise UserInactiveError(reason="user_inactive")
+
+        if not user.is_verified:
+            await self.redis_service.delete(challenge_key)
+            raise EmailNotVerifiedError()
+
+        if not user.is_2fa_enabled:
+            await self.redis_service.delete(challenge_key)
+            raise TwoFactorChallengeInvalidError()
+
+        # Challenge chỉ được sử dụng một lần.
+        await self.redis_service.delete(challenge_key)
+
+        return self._create_token_pair(user)
